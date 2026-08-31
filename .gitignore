@@ -2,3 +2,5 @@
 identities.json
 build-*/
 frida/
+__pycache__/
+*.pyc
