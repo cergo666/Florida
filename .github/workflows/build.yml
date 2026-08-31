@@ -9,6 +9,9 @@ on:
     paths:
       - ".github/workflows/build.yml"
       - "patches/**"
+      - "scripts/**"
+      - "tests/**"
+      - "README.md"
 
 env:
   NDK_VERSION: r29
@@ -71,8 +74,27 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           delete_release: true
 
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Verify rewrite anchors against upstream Frida
+        run: |
+          git clone --depth 1 https://github.com/frida/frida.git frida-src
+          git -C frida-src submodule update --init --depth 1 subprojects/frida-core subprojects/frida-gum
+          python3 scripts/rewrite.py --frida-dir frida-src --check --seed ci
+
   create_release:
-    needs: check_version
+    needs: [check_version, test]
     runs-on: ubuntu-22.04
     if: needs.check_version.outputs.ALREADY_RELEASE != '1'
 
@@ -86,7 +108,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   android_build:
-    needs: [check_version, create_release]
+    needs: [check_version, create_release, test]
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -126,28 +148,26 @@ jobs:
             flex bison ruby ruby-dev python3-requests python3-setuptools python3-dev \
             python3-pip libc6-dev libc6-dev-i386
           sudo gem install fpm -v 1.11.0 --no-document
-          python3 -m pip install lief graphlib
+          python3 -m pip install graphlib
 
       - name: Build frida for ${{ matrix.arch }}
         shell: bash
         run: |
           export ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 scripts/identities.py --seed "${{ github.run_id }}-${{ needs.check_version.outputs.FRIDA_VERSION }}" -o identities.json
           git clone --recurse-submodules https://github.com/frida/frida
-          cd frida
-          for path in ../patches/*; do
-            name=$(basename "$path")
-            echo "Apply patches in $path to subprojects/$name"
-            cd "subprojects/$name"
-            git am "../../../patches/$name/"*.patch
-            cd ../..
-          done
-          cd ..
+          python3 scripts/rewrite.py --frida-dir frida --identities identities.json
           mkdir "build-${{ matrix.arch }}"
           cd "build-${{ matrix.arch }}"
           ../frida/configure --host=${{ matrix.arch }}
           make -j"$(nproc)"
+
+      - name: Scan binaries for classic fingerprints
+        run: |
+          python3 scripts/scan_binary.py \
+            "build-${{ matrix.arch }}/subprojects/frida-core/server/frida-server" \
+            "build-${{ matrix.arch }}/subprojects/frida-core/lib/gadget/frida-gadget.so" \
+            "build-${{ matrix.arch }}/subprojects/frida-core/inject/frida-inject"
 
       - name: Package artifacts
         run: |
@@ -170,6 +190,7 @@ jobs:
              "staging/florida-gadget-$FRIDA_VERSION-$a.so.gz"
           cp "build-$a/subprojects/frida-gum/bindings/gumjs/libfrida-gumjs-1.0.a.gz" \
              "staging/florida-gumjs-$FRIDA_VERSION-$a.a.gz"
+          cp identities.json "staging/florida-identities-$FRIDA_VERSION.json"
 
       - name: Upload staged artifacts
         uses: actions/upload-artifact@v4
@@ -196,4 +217,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FRIDA_VERSION: ${{ needs.check_version.outputs.FRIDA_VERSION }}
         run: |
-          gh release upload "$FRIDA_VERSION" ./*.gz --clobber
+          gh release upload "$FRIDA_VERSION" ./*.gz florida-identities-*.json --clobber

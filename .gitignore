@@ -1,1 +1,4 @@
 .DS_Store
+identities.json
+build-*/
+frida/
