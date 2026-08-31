@@ -1,12 +1,31 @@
 # Florida
 
+<p align="center">
+  <a href="https://github.com/cergo666/Florida/releases"><img src="https://img.shields.io/github/v/release/cergo666/Florida?style=flat-square&logo=github" alt="release"></a>
+  <a href="https://github.com/cergo666/Florida/releases"><img src="https://img.shields.io/github/downloads/cergo666/Florida/total?style=flat-square&color=blue" alt="downloads"></a>
+  <a href="https://github.com/cergo666/Florida/releases/latest"><img src="https://img.shields.io/github/downloads/cergo666/Florida/latest/total?style=flat-square&label=latest%20downloads" alt="latest downloads"></a>
+  <a href="https://github.com/cergo666/Florida/stargazers"><img src="https://img.shields.io/github/stars/cergo666/Florida?style=flat-square" alt="stars"></a>
+  <a href="https://github.com/cergo666/Florida/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/cergo666/Florida/build.yml?style=flat-square&label=CI" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/cergo666/Florida?style=flat-square" alt="license"></a>
+</p>
+
+<p align="center">
+  <a href="README.md">Русский</a> · <b>English</b>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/cergo666/MagiskHluda"><img src="https://img.shields.io/github/v/release/cergo666/MagiskHluda?style=flat-square&label=MagiskHluda" alt="MagiskHluda"></a>
+</p>
+
 Patched [Frida](https://github.com/frida/frida) for Android that drops the well-known on-device fingerprints (`gum-js-loop`, `frida-agent-*.so`, `frida_agent_main`, port `27042`, `ggbond`, `/memfd:jit-cache`, and others).
 
 Each CI run generates a **new** set of names and a **new** listen port. Values live in `florida-identities-<version>.json` next to the release assets.
 
-[Русский](README.md) · **English**
+## Ecosystem
 
-Upstream fork: [Ylarod/Florida](https://github.com/Ylarod/Florida). Magisk module: [MagiskHluda](https://github.com/cergo666/MagiskHluda).
+| Repo | Role |
+|---|---|
+| **Florida** (this one) | builds `florida-server` / gadget / inject |
+| [MagiskHluda](https://github.com/cergo666/MagiskHluda) | Magisk / KernelSU / APatch module, start on boot |
+| [Ylarod/Florida](https://github.com/Ylarod/Florida) | original fork |
 
 ## What changed vs classic Florida patches
 
@@ -21,11 +40,9 @@ Upstream fork: [Ylarod/Florida](https://github.com/Ylarod/Florida). Magisk modul
 
 Intentionally **not** renamed: D-Bus API names `re.frida.*` (the official desktop client needs them). GObject type names such as `frida_agent_message_transmitter_*` also stay; they are not the strings public detectors scan for (`gum-js-loop`, `frida-agent-*.so`, port `27042`).
 
-Source rewrites cannot hide inline hooks or `.text` vs disk checks. That is instrumentation, not a string.
-
 ## Download
 
-Release assets are named `florida-server-*` / `florida-gadget-*` / `florida-inject-*`.
+Assets: [`florida-server-*`](https://github.com/cergo666/Florida/releases) / `florida-gadget-*` / `florida-inject-*` + `florida-identities-<version>.json`.
 
 ## Connect
 
@@ -48,6 +65,8 @@ adb shell su -c '/data/local/tmp/app_process -l 127.0.0.1:27042'
 Apps that only probe `27042` will miss the custom port. Apps that scan every localhost port still see the Frida handshake — that is not solvable without changing the protocol (and the client).
 
 Rename the binary on the device. `frida-server` in `/data/local/tmp` is itself a detection string.
+
+For start-on-boot, use [MagiskHluda](https://github.com/cergo666/MagiskHluda).
 
 ## Build
 
@@ -75,10 +94,20 @@ python3 -m unittest discover -s tests -v
 
 CI runs those tests, then `rewrite.py --check` against a fresh Frida clone, then `scripts/scan_binary.py` on the built `frida-server` / gadget / inject.
 
-## References
+## Limits
 
-- https://github.com/frida/frida
-- https://github.com/darvincisec/DetectFrida
-- https://github.com/qtfreet00/AntiFrida
-- https://github.com/Ylarod/Florida
-- https://github.com/cergo666/MagiskHluda
+Source rewrites cannot hide inline hooks or `.text` vs disk checks. That is instrumentation, not a string. If Florida is still detected, [ZygiskFrida](https://github.com/lico-n/ZygiskFrida) is an alternative.
+
+## Links
+
+- [Frida](https://github.com/frida/frida)
+- [DetectFrida](https://github.com/darvincisec/DetectFrida)
+- [AntiFrida](https://github.com/qtfreet00/AntiFrida)
+- [Ylarod/Florida](https://github.com/Ylarod/Florida)
+- [MagiskHluda](https://github.com/cergo666/MagiskHluda)
+
+<p align="center">
+  <a href="https://github.com/cergo666/Florida/graphs/contributors">
+    <img src="https://contrib.rocks/image?repo=cergo666/Florida" alt="contributors">
+  </a>
+</p>
