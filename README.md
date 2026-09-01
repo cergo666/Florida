@@ -27,6 +27,78 @@
 | [MagiskHluda](https://github.com/cergo666/MagiskHluda) | Magisk / KernelSU / APatch-модуль, старт на boot |
 | [Ylarod/Florida](https://github.com/Ylarod/Florida) | исходный форк |
 
+## Установка на устройство
+
+Два пути. `hluda` из MagiskHluda сюда **не** копируется: там порт берётся из `module.cfg` модуля, здесь — из `identities.json`.
+
+### Magisk / KernelSU / APatch
+
+Поставьте [MagiskHluda](https://github.com/cergo666/MagiskHluda). Сервер поднимается на boot, порт в `module.cfg`. С хоста:
+
+```bash
+hluda ps
+hluda -f com.example.app
+```
+
+`hluda` живёт в репозитории MagiskHluda: `scripts/hluda`.
+
+### Вручную (этот репозиторий)
+
+1. Скачайте с [Releases](https://github.com/cergo666/Florida/releases) `florida-server-*-android-<arch>.gz` и **тот же** `florida-identities-<version>.json`.
+2. Распакуйте сервер и поставьте скриптом — он пушит бинарник, ставит `chmod` и печатает команды с портом из JSON:
+
+```bash
+gunzip -k florida-server-*-android-arm64.gz
+python3 scripts/push-emulator.py \
+  --server florida-server-*-android-arm64 \
+  --identities florida-identities-*.json
+```
+
+3. Дальше выполните то, что скрипт напечатал: старт на устройстве и `adb forward`. Бинарник кладётся в `/data/local/tmp/app_process` (не `frida-server` — это строка для детекта).
+
+Без скрипта то же самое руками — см. [Подключение](#подключение).
+
+## Скрипты
+
+Всё лежит в `scripts/`. Для **установки на девайс** нужен только `push-emulator.py`. Остальное — сборка и CI.
+
+| Скрипт | Зачем |
+|---|---|
+| [`push-emulator.py`](scripts/push-emulator.py) | **Установка:** `adb push` сервера + chmod, печать `adb forward` / `frida-ps -H` с портом из identities |
+| [`identities.py`](scripts/identities.py) | Сгенерировать `identities.json` (имена, порт, XOR для RPC) |
+| [`rewrite.py`](scripts/rewrite.py) | Вписать identities в checkout Frida. `--check` только проверяет якоря, дерево не трогает |
+| [`strip-fingerprints.py`](scripts/strip-fingerprints.py) | Замена `gmain` / `gdbus` той же длины в ELF. CI вешает его на `post-process.py`, руками обычно не вызывают |
+| [`scan_binary.py`](scripts/scan_binary.py) | Проверка, что в бинарнике не осталось `gum-js-loop`, `27042`, `frida:rpc` и т.п. |
+
+`rewrite.py` работает по **рабочей копии** Frida. Не гоняйте его по дереву, которое хотите оставить нетронутым.
+
+## Подключение
+
+Сервер слушает **не** `27042`, а `control_port` из identities. После `push-emulator.py` (или ручного пуша):
+
+```bash
+adb shell su -c '/data/local/tmp/app_process -l 127.0.0.1:<control_port>'
+adb forward tcp:<control_port> tcp:<control_port>
+frida-ps -H 127.0.0.1:<control_port>
+frida -H 127.0.0.1:<control_port> -f com.example.app
+```
+
+Полностью вручную, без скрипта:
+
+```bash
+adb push florida-server /data/local/tmp/app_process
+adb shell su -c 'chmod 755 /data/local/tmp/app_process'
+adb shell su -c '/data/local/tmp/app_process'
+```
+
+Если нужен стоковый `frida -U` (он всегда открывает `tcp:27042` на устройстве):
+
+```bash
+adb shell su -c '/data/local/tmp/app_process -l 127.0.0.1:27042'
+```
+
+Приложения, которые только тыкают `27042`, кастомный порт не увидят. Те, что сканируют все localhost-порты, по-прежнему видят handshake Frida — без смены протокола (и клиента) это не убрать.
+
 ## Что изменилось относительно старых патчей
 
 | Было | Стало |
@@ -39,34 +111,6 @@
 | TCP **27042** | порт сборки (см. identities JSON) |
 
 Намеренно **не** переименовывается: D-Bus `re.frida.*` (его ждёт официальный клиент). Имена GObject вроде `frida_agent_message_transmitter_*` тоже остаются — детекторы обычно ищут не их, а `gum-js-loop`, `frida-agent-*.so`, порт `27042`.
-
-## Скачать
-
-Артефакты: [`florida-server-*`](https://github.com/cergo666/Florida/releases) / `florida-gadget-*` / `florida-inject-*` + `florida-identities-<version>.json`.
-
-## Подключение
-
-Сервер больше не слушает `27042`. Порт берите из `florida-identities-*.json`:
-
-```bash
-adb push florida-server /data/local/tmp/app_process
-adb shell su -c 'chmod 755 /data/local/tmp/app_process'
-adb shell su -c '/data/local/tmp/app_process'   # 127.0.0.1:<control_port>
-adb forward tcp:<control_port> tcp:<control_port>
-frida-ps -H 127.0.0.1:<control_port>
-```
-
-Если нужен стоковый `frida -U` (он всегда открывает `tcp:27042` на устройстве):
-
-```bash
-adb shell su -c '/data/local/tmp/app_process -l 127.0.0.1:27042'
-```
-
-Приложения, которые только тыкают `27042`, кастомный порт не увидят. Те, что сканируют все localhost-порты, по-прежнему видят handshake Frida — без смены протокола (и клиента) это не убрать.
-
-Бинарник на устройстве лучше переименовать. `frida-server` в `/data/local/tmp` сам по себе строка для детекта.
-
-На boot удобнее ставить [MagiskHluda](https://github.com/cergo666/MagiskHluda).
 
 ## Сборка
 
@@ -82,7 +126,13 @@ python3 scripts/rewrite.py --frida-dir /path/to/frida --check --seed ci
 
 Дальше обычная сборка Frida (`./configure --host=android-arm64 && make`).
 
-`scripts/rewrite.py` работает по **рабочей копии**. Не гоняйте его по дереву, которое хотите оставить нетронутым.
+На устройство из локальной сборки:
+
+```bash
+python3 scripts/push-emulator.py \
+  --server build-android-arm64/subprojects/frida-core/server/frida-server \
+  --identities identities.json
+```
 
 ## Тесты
 

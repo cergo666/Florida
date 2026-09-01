@@ -16,7 +16,13 @@ def run(cmd: list[str]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Install Florida onto a device: adb push the server, chmod it, "
+            "and print start / adb forward / frida -H commands using control_port "
+            "from identities.json (the JSON shipped next to GitHub release assets)."
+        )
+    )
     parser.add_argument("--identities", type=Path, default=Path("identities.json"))
     parser.add_argument("--server", type=Path, required=True, help="Path to built frida-server")
     parser.add_argument("--remote", default="/data/local/tmp/app_process")

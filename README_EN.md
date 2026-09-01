@@ -27,6 +27,78 @@ Each CI run generates a **new** set of names and a **new** listen port. Values l
 | [MagiskHluda](https://github.com/cergo666/MagiskHluda) | Magisk / KernelSU / APatch module, start on boot |
 | [Ylarod/Florida](https://github.com/Ylarod/Florida) | original fork |
 
+## Install on a device
+
+Two paths. Do **not** copy MagiskHluda's `hluda` here: that wrapper reads the module's `module.cfg`. Florida's port lives in `identities.json`.
+
+### Magisk / KernelSU / APatch
+
+Install [MagiskHluda](https://github.com/cergo666/MagiskHluda). The server starts on boot; the port is in `module.cfg`. From the host:
+
+```bash
+hluda ps
+hluda -f com.example.app
+```
+
+`hluda` lives in the MagiskHluda repo: `scripts/hluda`.
+
+### Manual (this repo)
+
+1. From [Releases](https://github.com/cergo666/Florida/releases) grab `florida-server-*-android-<arch>.gz` and the matching `florida-identities-<version>.json`.
+2. Decompress the server and install with the helper — it pushes the binary, `chmod`s it, and prints commands using the port from the JSON:
+
+```bash
+gunzip -k florida-server-*-android-arm64.gz
+python3 scripts/push-emulator.py \
+  --server florida-server-*-android-arm64 \
+  --identities florida-identities-*.json
+```
+
+3. Run what the script printed: start on device, then `adb forward`. The binary is stored as `/data/local/tmp/app_process` (not `frida-server` — that name is itself a detection string).
+
+Without the helper, the same steps by hand — see [Connect](#connect).
+
+## Scripts
+
+Everything is under `scripts/`. For **device install** you only need `push-emulator.py`. The rest is build/CI.
+
+| Script | Purpose |
+|---|---|
+| [`push-emulator.py`](scripts/push-emulator.py) | **Install:** `adb push` + chmod, then print `adb forward` / `frida-ps -H` using the identities port |
+| [`identities.py`](scripts/identities.py) | Generate `identities.json` (names, port, RPC XOR) |
+| [`rewrite.py`](scripts/rewrite.py) | Apply identities to a Frida checkout. `--check` verifies anchors without writing |
+| [`strip-fingerprints.py`](scripts/strip-fingerprints.py) | Same-length ELF replace for `gmain` / `gdbus`. CI hooks it from `post-process.py`; rarely run by hand |
+| [`scan_binary.py`](scripts/scan_binary.py) | Fail if the binary still contains `gum-js-loop`, `27042`, `frida:rpc`, etc. |
+
+`rewrite.py` must be pointed at a **working copy**. Do not run it against a Frida tree you want to keep pristine.
+
+## Connect
+
+The server listens on `control_port` from identities, **not** `27042`. After `push-emulator.py` (or a manual push):
+
+```bash
+adb shell su -c '/data/local/tmp/app_process -l 127.0.0.1:<control_port>'
+adb forward tcp:<control_port> tcp:<control_port>
+frida-ps -H 127.0.0.1:<control_port>
+frida -H 127.0.0.1:<control_port> -f com.example.app
+```
+
+Fully manual, no helper:
+
+```bash
+adb push florida-server /data/local/tmp/app_process
+adb shell su -c 'chmod 755 /data/local/tmp/app_process'
+adb shell su -c '/data/local/tmp/app_process'
+```
+
+To keep stock `frida -U` (it always opens `tcp:27042` on the device):
+
+```bash
+adb shell su -c '/data/local/tmp/app_process -l 127.0.0.1:27042'
+```
+
+Apps that only probe `27042` will miss the custom port. Apps that scan every localhost port still see the Frida handshake — that is not solvable without changing the protocol (and the client).
+
 ## What changed vs classic Florida patches
 
 | Old patch | Now |
@@ -39,34 +111,6 @@ Each CI run generates a **new** set of names and a **new** listen port. Values l
 | default TCP **27042** | per-build port (see identities JSON) |
 
 Intentionally **not** renamed: D-Bus API names `re.frida.*` (the official desktop client needs them). GObject type names such as `frida_agent_message_transmitter_*` also stay; they are not the strings public detectors scan for (`gum-js-loop`, `frida-agent-*.so`, port `27042`).
-
-## Download
-
-Assets: [`florida-server-*`](https://github.com/cergo666/Florida/releases) / `florida-gadget-*` / `florida-inject-*` + `florida-identities-<version>.json`.
-
-## Connect
-
-The server no longer listens on `27042`. Use the port from `florida-identities-*.json`:
-
-```bash
-adb push florida-server /data/local/tmp/app_process
-adb shell su -c 'chmod 755 /data/local/tmp/app_process'
-adb shell su -c '/data/local/tmp/app_process'   # listens on 127.0.0.1:<control_port>
-adb forward tcp:<control_port> tcp:<control_port>
-frida-ps -H 127.0.0.1:<control_port>
-```
-
-To keep stock `frida -U` (it always opens `tcp:27042` on the device):
-
-```bash
-adb shell su -c '/data/local/tmp/app_process -l 127.0.0.1:27042'
-```
-
-Apps that only probe `27042` will miss the custom port. Apps that scan every localhost port still see the Frida handshake — that is not solvable without changing the protocol (and the client).
-
-Rename the binary on the device. `frida-server` in `/data/local/tmp` is itself a detection string.
-
-For start-on-boot, use [MagiskHluda](https://github.com/cergo666/MagiskHluda).
 
 ## Build
 
@@ -82,7 +126,13 @@ python3 scripts/rewrite.py --frida-dir /path/to/frida --check --seed ci
 
 Then configure/build Frida as usual (`./configure --host=android-arm64 && make`).
 
-`scripts/rewrite.py` must be pointed at a **working copy**. Do not run it against a Frida tree you want to keep pristine.
+Onto a device from a local build:
+
+```bash
+python3 scripts/push-emulator.py \
+  --server build-android-arm64/subprojects/frida-core/server/frida-server \
+  --identities identities.json
+```
 
 ## Tests
 
