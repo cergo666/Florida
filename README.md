@@ -49,7 +49,7 @@ hluda -f com.example.app
 
 ```bash
 gunzip -k florida-server-*-android-arm64.gz
-python3 scripts/push-emulator.py \
+python3 install.py \
   --server florida-server-*-android-arm64 \
   --identities florida-identities-*.json
 ```
@@ -60,11 +60,11 @@ python3 scripts/push-emulator.py \
 
 ## Скрипты
 
-Всё лежит в `scripts/`. Для **установки на девайс** нужен только `push-emulator.py`. Остальное — сборка и CI.
+Всё для сборки лежит в `scripts/`. Для **установки на девайс** нужен корневой [`install.py`](install.py).
 
 | Скрипт | Зачем |
 |---|---|
-| [`push-emulator.py`](scripts/push-emulator.py) | **Установка:** `adb push` сервера + chmod, печать `adb forward` / `frida-ps -H` с портом из identities |
+| [`install.py`](install.py) | **Установка** на телефон или эмулятор: `adb push` + chmod, печать `adb forward` / `frida-ps -H` с портом из identities |
 | [`identities.py`](scripts/identities.py) | Сгенерировать `identities.json` (имена, порт, XOR для RPC) |
 | [`rewrite.py`](scripts/rewrite.py) | Вписать identities в checkout Frida. `--check` только проверяет якоря, дерево не трогает |
 | [`strip-fingerprints.py`](scripts/strip-fingerprints.py) | Замена `gmain` / `gdbus` той же длины в ELF. CI вешает его на `post-process.py`, руками обычно не вызывают |
@@ -74,7 +74,7 @@ python3 scripts/push-emulator.py \
 
 ## Подключение
 
-Сервер слушает **не** `27042`, а `control_port` из identities. После `push-emulator.py` (или ручного пуша):
+Сервер слушает **не** `27042`, а `control_port` из identities. После `install.py` (или ручного пуша):
 
 ```bash
 adb shell su -c '/data/local/tmp/app_process -l 127.0.0.1:<control_port>'
@@ -129,7 +129,7 @@ python3 scripts/rewrite.py --frida-dir /path/to/frida --check --seed ci
 На устройство из локальной сборки:
 
 ```bash
-python3 scripts/push-emulator.py \
+python3 install.py \
   --server build-android-arm64/subprojects/frida-core/server/frida-server \
   --identities identities.json
 ```

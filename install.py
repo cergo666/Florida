@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy Florida binaries to an emulator/device and print connect instructions."""
+"""Install Florida onto a device and print connect instructions."""
 
 from __future__ import annotations
 
@@ -18,13 +18,13 @@ def run(cmd: list[str]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Install Florida onto a device: adb push the server, chmod it, "
-            "and print start / adb forward / frida -H commands using control_port "
-            "from identities.json (the JSON shipped next to GitHub release assets)."
+            "Install Florida onto a phone or emulator: adb push the server, "
+            "chmod it, and print start / adb forward / frida -H commands using "
+            "control_port from identities.json."
         )
     )
     parser.add_argument("--identities", type=Path, default=Path("identities.json"))
-    parser.add_argument("--server", type=Path, required=True, help="Path to built frida-server")
+    parser.add_argument("--server", type=Path, required=True, help="Path to florida-server / frida-server")
     parser.add_argument("--remote", default="/data/local/tmp/app_process")
     parser.add_argument("--adb", default="adb")
     args = parser.parse_args(argv)

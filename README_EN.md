@@ -49,7 +49,7 @@ hluda -f com.example.app
 
 ```bash
 gunzip -k florida-server-*-android-arm64.gz
-python3 scripts/push-emulator.py \
+python3 install.py \
   --server florida-server-*-android-arm64 \
   --identities florida-identities-*.json
 ```
@@ -60,11 +60,11 @@ Without the helper, the same steps by hand — see [Connect](#connect).
 
 ## Scripts
 
-Everything is under `scripts/`. For **device install** you only need `push-emulator.py`. The rest is build/CI.
+Everything for the **build** is under `scripts/`. For **device install** use root [`install.py`](install.py).
 
 | Script | Purpose |
 |---|---|
-| [`push-emulator.py`](scripts/push-emulator.py) | **Install:** `adb push` + chmod, then print `adb forward` / `frida-ps -H` using the identities port |
+| [`install.py`](install.py) | **Install** on a phone or emulator: `adb push` + chmod, then print `adb forward` / `frida-ps -H` using the identities port |
 | [`identities.py`](scripts/identities.py) | Generate `identities.json` (names, port, RPC XOR) |
 | [`rewrite.py`](scripts/rewrite.py) | Apply identities to a Frida checkout. `--check` verifies anchors without writing |
 | [`strip-fingerprints.py`](scripts/strip-fingerprints.py) | Same-length ELF replace for `gmain` / `gdbus`. CI hooks it from `post-process.py`; rarely run by hand |
@@ -74,7 +74,7 @@ Everything is under `scripts/`. For **device install** you only need `push-emula
 
 ## Connect
 
-The server listens on `control_port` from identities, **not** `27042`. After `push-emulator.py` (or a manual push):
+The server listens on `control_port` from identities, **not** `27042`. After `install.py` (or a manual push):
 
 ```bash
 adb shell su -c '/data/local/tmp/app_process -l 127.0.0.1:<control_port>'
@@ -129,7 +129,7 @@ Then configure/build Frida as usual (`./configure --host=android-arm64 && make`)
 Onto a device from a local build:
 
 ```bash
-python3 scripts/push-emulator.py \
+python3 install.py \
   --server build-android-arm64/subprojects/frida-core/server/frida-server \
   --identities identities.json
 ```
