@@ -19,10 +19,18 @@ from identities import dumps_c_bytes, generate, load, save
 
 @dataclass
 class Edit:
+    """Source rewrite rule.
+
+    ``count`` is the *minimum* number of occurrences required. Every match is
+    rewritten, so extra identical sites added by upstream are handled automatically.
+    Set ``optional`` when the file may be absent on older Frida trees.
+    """
+
     rel: str
     old: str
     new: str
     count: int
+    optional: bool = False
 
 
 def fail(msg: str) -> None:
@@ -33,13 +41,21 @@ def fail(msg: str) -> None:
 def apply_edit(root: Path, edit: Edit, check_only: bool) -> None:
     path = root / edit.rel
     if not path.is_file():
+        if edit.optional:
+            return
         fail(f"missing {edit.rel}")
     text = path.read_text(encoding="utf-8")
     found = text.count(edit.old)
-    if found != edit.count:
+    if found < edit.count:
         fail(
-            f"{edit.rel}: expected {edit.count} occurrence(s) of {edit.old!r}, "
+            f"{edit.rel}: expected at least {edit.count} occurrence(s) of {edit.old!r}, "
             f"found {found}"
+        )
+    if found > edit.count:
+        print(
+            f"warning: {edit.rel}: expected at least {edit.count} of {edit.old!r}, "
+            f"found {found}; rewriting all",
+            file=sys.stderr,
         )
     if check_only:
         return
@@ -234,46 +250,11 @@ def edits_for(ident: dict) -> list[Edit]:
             "\tpublic void main (string agent_parameters, ref Frida.UnloadPolicy unload_policy, void * injector_state) {",
             1,
         ),
+        # Both PROSPERO main() and Android JNI_OnLoad call sites.
         Edit(
             "subprojects/frida-core/lib/agent/agent-glue.c",
-            "  frida_agent_main (state->agent_parameters, &state->unload_policy, state->injector_state);",
-            f"  {s} (state->agent_parameters, &state->unload_policy, state->injector_state);",
-            1,
-        ),
-        Edit(
-            "subprojects/frida-core/lib/agent/frida-agent.version",
-            "    frida_agent_main;",
-            f"    {s};",
-            1,
-        ),
-        Edit(
-            "subprojects/frida-core/lib/agent/frida-agent-android.version",
-            "    frida_agent_main;",
-            f"    {s};",
-            1,
-        ),
-        Edit(
-            "subprojects/frida-core/lib/agent/frida-agent-glibc.version",
-            "    frida_agent_main;",
-            f"    {s};",
-            1,
-        ),
-        Edit(
-            "subprojects/frida-core/lib/agent/frida-agent.symbols",
-            "frida_agent_main\n",
-            f"{s}\n",
-            1,
-        ),
-        Edit(
-            "subprojects/frida-core/lib/agent/frida-agent-x86.symbols",
-            "_frida_agent_main\n",
-            f"_{s}\n",
-            1,
-        ),
-        Edit(
-            "subprojects/frida-core/lib/agent/frida-agent.def",
-            "\tfrida_agent_main\n",
-            f"\t{s}\n",
+            "frida_agent_main (",
+            f"{s} (",
             1,
         ),
         Edit(
@@ -300,6 +281,7 @@ def edits_for(ident: dict) -> list[Edit]:
             f'unowned string entrypoint = "{s}";',
             1,
         ),
+        # FreeBSD has PROSPERO + non-PROSPERO paths; count is a minimum.
         Edit(
             "subprojects/frida-core/src/freebsd/freebsd-host-session.vala",
             'var id = yield binjector.inject_library_resource (pid, agent_desc, "frida_agent_main",',
@@ -400,6 +382,76 @@ POST_PROCESS_ANCHOR = """        if strip_enabled and strip_command is not None:
             subprocess.run(strip_command + [intermediate_path], **run_kwargs)
 """
 
+# Production sources that rewrite.py is responsible for clearing.
+SOURCE_LEFTOVER_NEEDLES = (
+    "frida_agent_main",
+    'g_thread_new ("gum-js-loop"',
+    "DEFAULT_CONTROL_PORT = 27042",
+    '"frida:rpc"',
+    "'frida:rpc'",
+)
+SOURCE_SCAN_SUFFIXES = {".vala", ".c", ".h", ".js", ".ts", ".symbols", ".def", ".version", ".build"}
+SOURCE_SKIP_DIR_NAMES = frozenset({"tests", "labrats"})
+
+
+def agent_export_edits(root: Path, symbol: str) -> list[Edit]:
+    """Rewrite every linker export script under lib/agent, including new upstream files."""
+    agent = root / "subprojects" / "frida-core" / "lib" / "agent"
+    if not agent.is_dir():
+        fail("frida-core/lib/agent is missing")
+
+    edits: list[Edit] = []
+    version_files = sorted(agent.glob("frida-agent*.version"))
+    if not version_files:
+        fail("no frida-agent*.version files under lib/agent")
+    for path in version_files:
+        rel = str(path.relative_to(root))
+        edits.append(Edit(rel, "    frida_agent_main;", f"    {symbol};", 1))
+
+    symbol_files = sorted(agent.glob("frida-agent*.symbols"))
+    if not symbol_files:
+        fail("no frida-agent*.symbols files under lib/agent")
+    for path in symbol_files:
+        rel = str(path.relative_to(root))
+        text = path.read_text(encoding="utf-8")
+        if "_frida_agent_main" in text:
+            edits.append(Edit(rel, "_frida_agent_main\n", f"_{symbol}\n", 1))
+        else:
+            edits.append(Edit(rel, "frida_agent_main\n", f"{symbol}\n", 1))
+
+    def_path = agent / "frida-agent.def"
+    if def_path.is_file():
+        edits.append(
+            Edit(str(def_path.relative_to(root)), "\tfrida_agent_main\n", f"\t{symbol}\n", 1)
+        )
+    return edits
+
+
+def assert_no_source_leftovers(root: Path) -> None:
+    """Fail if classic fingerprints remain in non-test production sources."""
+    hits: list[str] = []
+    for sub in ("subprojects/frida-core", "subprojects/frida-gum"):
+        base = root / sub
+        if not base.is_dir():
+            continue
+        for path in base.rglob("*"):
+            if not path.is_file():
+                continue
+            if SOURCE_SKIP_DIR_NAMES.intersection(path.parts):
+                continue
+            if path.suffix not in SOURCE_SCAN_SUFFIXES and path.name != "meson.build":
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            for needle in SOURCE_LEFTOVER_NEEDLES:
+                if needle in text:
+                    rel = path.relative_to(root)
+                    hits.append(f"{rel}: leftover {needle!r}")
+    if hits:
+        fail("source leftovers after rewrite:\n  " + "\n  ".join(hits))
+
 
 def install_strip_hook(frida_root: Path, ident: dict, scripts_dir: Path, check_only: bool) -> None:
     tools = frida_root / "subprojects" / "frida-core" / "tools"
@@ -451,7 +503,13 @@ def run(frida_root: Path, ident: dict, scripts_dir: Path, check_only: bool) -> N
     for edit in edits_for(ident):
         apply_edit(frida_root, edit, check_only)
 
+    for edit in agent_export_edits(frida_root, ident["agent_symbol"]):
+        apply_edit(frida_root, edit, check_only)
+
     install_strip_hook(frida_root, ident, scripts_dir, check_only)
+
+    if not check_only:
+        assert_no_source_leftovers(frida_root)
 
 
 def main(argv: list[str] | None = None) -> int:

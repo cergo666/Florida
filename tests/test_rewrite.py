@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import io
 import os
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from identities import generate  # noqa: E402
-from rewrite import edits_for  # noqa: E402
+from rewrite import Edit, apply_edit, edits_for  # noqa: E402
 from scan_binary import find_classic, load_bytes  # noqa: E402
 
 
@@ -36,6 +38,47 @@ class RewriteUnitTest(unittest.TestCase):
         self.assertIn("27042", port_edits[0].old)
         self.assertNotIn("27042", port_edits[0].new)
         self.assertIn(str(ident["control_port"]), port_edits[0].new)
+
+    def test_apply_edit_rewrites_extra_occurrences(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rel = "host.vala"
+            (root / rel).write_text(
+                'a "frida_agent_main" b "frida_agent_main" c\n',
+                encoding="utf-8",
+            )
+            err = io.StringIO()
+            with redirect_stderr(err):
+                apply_edit(
+                    root,
+                    Edit(rel, '"frida_agent_main"', '"sym"', 1),
+                    check_only=False,
+                )
+            text = (root / rel).read_text(encoding="utf-8")
+            self.assertEqual(text.count('"sym"'), 2)
+            self.assertNotIn("frida_agent_main", text)
+            self.assertIn("rewriting all", err.getvalue())
+
+    def test_apply_edit_fails_when_too_few(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rel = "host.vala"
+            (root / rel).write_text("nothing here\n", encoding="utf-8")
+            with self.assertRaises(SystemExit):
+                apply_edit(
+                    root,
+                    Edit(rel, '"frida_agent_main"', '"sym"', 1),
+                    check_only=True,
+                )
+
+    def test_apply_edit_optional_missing_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            apply_edit(
+                root,
+                Edit("missing.vala", "old", "new", 1, optional=True),
+                check_only=False,
+            )
 
 
 class ScanBinaryTest(unittest.TestCase):
