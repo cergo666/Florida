@@ -114,7 +114,8 @@ adb shell su -c '/data/local/tmp/app_process -l 127.0.0.1:27042'
 | Бамп upstream Frida | патчи часто не накладываются | якоря проверяются (`rewrite.py --check`); при сдвиге CI падает явно |
 | Релиз | `florida-server-*` | то же + **`florida-identities-<version>.json`** |
 | Проверки сборки | нет скана отпечатков | unittest + `scan_binary.py` (нет `gum-js-loop`, `27042`, `frida:rpc`, …) |
-| На устройство | руками `adb push` | [`install.py`](install.py); на boot — [MagiskHluda](https://github.com/cergo666/MagiskHluda) + `hluda` |
+| На устройство | руками `adb push` | [`install.py`](install.py); на boot — [этот MagiskHluda](https://github.com/cergo666/MagiskHluda) + `hluda` |
+| Magisk-модуль | [Exo1i/MagiskHluda](https://github.com/Exo1i/MagiskHluda): `0.0.0.0:27042`, без identities | [cergo666/MagiskHluda](https://github.com/cergo666/MagiskHluda): порт из JSON, **127.0.0.1**, обёртка `hluda` (таблица там) |
 | Документация | короткий README | RU + EN, установка и таблица скриптов |
 
 ## Сборка

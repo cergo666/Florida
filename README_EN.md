@@ -114,7 +114,8 @@ Same wire protocol: stock `frida` CLI still works. D-Bus `re.frida.*` and GObjec
 | Upstream Frida bumps | patches often fail to apply | anchors checked (`rewrite.py --check`); CI fails loudly on drift |
 | Release assets | `florida-server-*` | same + **`florida-identities-<version>.json`** |
 | Build checks | no fingerprint scan | unittest + `scan_binary.py` (no `gum-js-loop`, `27042`, `frida:rpc`, …) |
-| Onto a device | manual `adb push` | [`install.py`](install.py); on boot — [MagiskHluda](https://github.com/cergo666/MagiskHluda) + `hluda` |
+| Onto a device | manual `adb push` | [`install.py`](install.py); on boot — [this MagiskHluda](https://github.com/cergo666/MagiskHluda) + `hluda` |
+| Magisk module | [Exo1i/MagiskHluda](https://github.com/Exo1i/MagiskHluda): `0.0.0.0:27042`, no identities | [cergo666/MagiskHluda](https://github.com/cergo666/MagiskHluda): port from JSON, **127.0.0.1**, `hluda` wrapper (table there) |
 | Docs | short README | RU + EN, install paths and a scripts table |
 
 ## Build
