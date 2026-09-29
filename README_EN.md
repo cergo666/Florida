@@ -99,18 +99,23 @@ adb shell su -c '/data/local/tmp/app_process -l 127.0.0.1:27042'
 
 Apps that only probe `27042` will miss the custom port. Apps that scan every localhost port still see the Frida handshake — that is not solvable without changing the protocol (and the client).
 
-## What changed vs classic Florida patches
+## How this fork differs from [Ylarod/Florida](https://github.com/Ylarod/Florida)
 
-| Old patch | Now |
-|---|---|
-| `ggbond` / `jit-cache` / export `main` | random per build |
-| double-Base64 of `frida:rpc` (known blob) | XOR at runtime; wire protocol still `frida:rpc` so stock `frida` CLI works |
-| `sed` on the ELF | source rewrites + same-length `gmain`/`gdbus` replace in `post-process.py` |
-| `git am` hunks that break on every bump | `scripts/rewrite.py` with counted anchors |
-| strip only the agent `.so` | same strip on server, gadget, inject |
-| default TCP **27042** | per-build port (see identities JSON) |
+Same wire protocol: stock `frida` CLI still works. D-Bus `re.frida.*` and GObject names such as `frida_agent_message_transmitter_*` are **not** renamed (the official client needs them). Inline hooks and `.text` vs disk checks are still visible.
 
-Intentionally **not** renamed: D-Bus API names `re.frida.*` (the official desktop client needs them). GObject type names such as `frida_agent_message_transmitter_*` also stay; they are not the strings public detectors scan for (`gum-js-loop`, `frida-agent-*.so`, port `27042`).
+| | [Ylarod/Florida](https://github.com/Ylarod/Florida) | This fork |
+|---|---|---|
+| How Frida is patched | `git am` of numbered `.patch` files | `scripts/rewrite.py` — counted-anchor edits |
+| Thread / memfd / agent names | fixed (`ggbond`, `jit-cache`, export `main`, …) | **new random set every CI build** (`identities.py`) |
+| Listen port | classic **27042** | per-build `control_port` (not 27042) in `florida-identities-*.json` |
+| Bind address | typically all interfaces | **127.0.0.1** by default (MagiskHluda) |
+| `frida:rpc` in the binary | double-Base64 — a known blob | XOR at runtime; on the wire still `frida:rpc` |
+| ELF string stripping | `sed` / mostly the agent `.so` | source rewrites + same-length `gmain`/`gdbus`; server, gadget, inject |
+| Upstream Frida bumps | patches often fail to apply | anchors checked (`rewrite.py --check`); CI fails loudly on drift |
+| Release assets | `florida-server-*` | same + **`florida-identities-<version>.json`** |
+| Build checks | no fingerprint scan | unittest + `scan_binary.py` (no `gum-js-loop`, `27042`, `frida:rpc`, …) |
+| Onto a device | manual `adb push` | [`install.py`](install.py); on boot — [MagiskHluda](https://github.com/cergo666/MagiskHluda) + `hluda` |
+| Docs | short README | RU + EN, install paths and a scripts table |
 
 ## Build
 

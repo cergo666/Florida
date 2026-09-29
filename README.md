@@ -99,18 +99,23 @@ adb shell su -c '/data/local/tmp/app_process -l 127.0.0.1:27042'
 
 Приложения, которые только тыкают `27042`, кастомный порт не увидят. Те, что сканируют все localhost-порты, по-прежнему видят handshake Frida — без смены протокола (и клиента) это не убрать.
 
-## Что изменилось относительно старых патчей
+## Чем этот форк отличается от [Ylarod/Florida](https://github.com/Ylarod/Florida)
 
-| Было | Стало |
-|---|---|
-| `ggbond` / `jit-cache` / экспорт `main` | случайные значения на каждую сборку |
-| double-Base64 `frida:rpc` (известный блоб) | XOR в рантайме; по проводу по-прежнему `frida:rpc`, чтобы работал стоковый `frida` CLI |
-| `sed` по ELF | правки исходников + замена той же длины для `gmain`/`gdbus` в `post-process.py` |
-| `git am`, который ломается на каждом бампе Frida | `scripts/rewrite.py` с подсчётом якорей |
-| strip только у agent `.so` | тот же strip у server, gadget, inject |
-| TCP **27042** | порт сборки (см. identities JSON) |
+Одинаково: это всё ещё Frida по протоколу. Стоковый `frida` CLI работает. D-Bus `re.frida.*` и GObject-имена вроде `frida_agent_message_transmitter_*` **не** переименовываются (их ждёт официальный клиент). Inline-хуки и сверка `.text` с диском так же не прячутся.
 
-Намеренно **не** переименовывается: D-Bus `re.frida.*` (его ждёт официальный клиент). Имена GObject вроде `frida_agent_message_transmitter_*` тоже остаются — детекторы обычно ищут не их, а `gum-js-loop`, `frida-agent-*.so`, порт `27042`.
+| | [Ylarod/Florida](https://github.com/Ylarod/Florida) | Этот форк |
+|---|---|---|
+| Как патчится Frida | `git am` нумерованных `.patch` | `scripts/rewrite.py` — якоря с подсчётом вхождений |
+| Имена потоков / memfd / agent | фиксированные (`ggbond`, `jit-cache`, экспорт `main`, …) | **случайные на каждую CI-сборку** (`identities.py`) |
+| Порт | классический **27042** | свой `control_port` (не 27042), в `florida-identities-*.json` |
+| Listen | обычно все интерфейсы | по умолчанию **127.0.0.1** (модуль MagiskHluda) |
+| `frida:rpc` в бинарнике | double-Base64 — известный блоб | XOR в рантайме; по проводу по-прежнему `frida:rpc` |
+| Снятие строк с ELF | `sed` / в основном agent `.so` | исходники + same-length replace `gmain`/`gdbus`; server, gadget, inject |
+| Бамп upstream Frida | патчи часто не накладываются | якоря проверяются (`rewrite.py --check`); при сдвиге CI падает явно |
+| Релиз | `florida-server-*` | то же + **`florida-identities-<version>.json`** |
+| Проверки сборки | нет скана отпечатков | unittest + `scan_binary.py` (нет `gum-js-loop`, `27042`, `frida:rpc`, …) |
+| На устройство | руками `adb push` | [`install.py`](install.py); на boot — [MagiskHluda](https://github.com/cergo666/MagiskHluda) + `hluda` |
+| Документация | короткий README | RU + EN, установка и таблица скриптов |
 
 ## Сборка
 
